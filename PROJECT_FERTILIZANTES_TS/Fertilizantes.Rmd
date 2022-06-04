@@ -1,0 +1,499 @@
+---
+title: "Demanda por Ferfilizantes"
+subtitle: "Trabalho de Conclusão em Time Series"
+author: "Dieggo Henrique"
+output: 
+  pdf_document:
+    toc: true
+    number_section: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo       = FALSE,  # Não mostrar o codigo
+  include    = TRUE,   # Incluir a figura
+  fig.width  = 7,      # Tamanho do gráfico
+  fig.height = 3,      # Altura do gráfico
+  warning    = FALSE,  # Avisos
+  message    = FALSE   # Mensagens
+  )
+
+# Bibliotecas Utilizadas
+library(tidyverse)  # Manipulação de dados
+library(readxl)     # Leitura de excel
+library(BETS)       # Acesso a Dados economicos
+library(fpp2)       # Trabalhando com ts
+library(TSstudio)   # Vizualizações
+library(ggplot2)    # Gráficos
+library(gridExtra)  # Complemento das Vizualizações
+library(tseries)    # Trabalahndo com séries temporais
+library(kableExtra) # Personalizando tabelas
+```
+
+\newpage
+# Introdução
+
+O agronegócio desempenha um importante papel na geração de riqueza no Brasil. Nas últimas décadas, o setor conviveu com inovações em produção e a Empresa Brasileira de Pesquisa Agropecuária – EMBRAPA, tem um papel relevante neste processo.  
+
+O agronegócio efetua anualmente elevados investimentos que retroalimenta toda uma gama de cadeias econômicas, além de contribuir com uma maior eficiência e eficácia na produção de alimentos. Neste quesito, o consumo de fertilizantes ocupa uma parcela signiﬁcativa dos investimentos realizados. 
+
+A Empresa Agro TS contratou os nossos seviços para realizarmos a previsão de demanda por fertilizande para diversas culturas (milho, soja, algodão, amendoin, feijão, trigo, etc.). Essa decisão foi tomada pela diretoria para que a empresa possa, com essa informação, realizar a projeção do seu orçamento de 2022 da melhor forma possivel e com as tecnicas mais avançadas de previsão que o mercado possui.  
+
+## Base de dados
+
+Dados extraídos da Associação Nacional de Defensivos Agrícolas - ANDA referentes ao volume de fertilizantes entregues ao mercado. Série em mil toneladas. Período de jan-1998 até out-2021^[[http://anda.org.br/wp-content/uploads/2022/01/Principais_Indicadores_2021.pdf](http://anda.org.br/wp-content/uploads/2022/01/Principais_Indicadores_2021.pdf)]
+
+
+## Leitura da base de dados
+
+O início da série é em Janeiro de 1998, tendo o seu fim em outubro de 2021. Para que realizemos a previsão da Demanda de Fertilizantes para o orçamento de 2022 da Empresa Agro TS. 
+
+No gráfico abaixo podemos observar o comportamento da série de dados. 
+
+
+
+```{r dataset}
+# Leitura da Base de dados e transformando em ts
+demanda <- read_excel("Fertilizantes.xlsx") 
+
+# Transformando a serie em ts
+ts.demanda <- stats::ts(demanda$fertilizantes, frequency = 12, start = c(1998,1), end = c(2021,10))
+
+# Vizualização dos dados
+ggplot2::autoplot(ts.demanda, col = "cyan4") +
+  ggplot2::theme_classic() +
+  ggplot2::labs(title = "Demanda por Fertilizantes \n (Jan-1998 a Out-2021)",
+                x = "Período",
+                y = "Demanda (ton)",
+                caption = "Fonte: ANDA período de jan-1998 até out-2021.") +
+  ggplot2::theme(plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+                 axis.title = element_text(size = 9, face = "italic"))
+```
+
+Pela a análise do gráfico acima, observamos que a série temporal possui uma tendencia^[Esta componente será observada quando a série temporal seguir uma determinada direção, crescente ou decrescente, e não necessariamente linear.] crescente, com picos sazonais^[Padrão que se repete com uma certa periodicidade dentro de um ano (exemplo: semanal, mensal etc.). Descreve um comportamento cíclico de curto prazo que pode ser observado várias vezes dentro da série especificada.] ao longo do ano. As ocilações, que podemos perceber no gráfico podem estar relacionado ao período de plantio e colheita (sazonalidade do setor). 
+
+
+## Análise Exploratória da Série Temporal.
+
+Nesta etapa, o intuito é aprender ainda mais com os dados, para que assim possamos gerar valor para a empresa que demandou os serviços. Antes de cortarmos a série iremos verificar indicadores de tendências da série por meio dos gráficos. 
+
+
+```{r, echo=FALSE, include=FALSE}
+# Tabela de Distribuição de frequências
+library(lubridate)
+DemandaFreq <- demanda %>% 
+  mutate(data = data, as.Date(data)) %>%
+  select(-1);DemandaFreq
+```
+
+```{r, echo=FALSE}
+DemandaFreq <- DemandaFreq %>% 
+  mutate(Ano = year(`as.Date(data)`)) %>%
+  select(Ano, fertilizantes) %>% 
+  group_by(Ano) %>%
+  summarise(TotalAno = sum(fertilizantes, na.rm = TRUE)) %>%
+  mutate(Frequencia = TotalAno/sum(TotalAno),
+         Percentual = round(100 * Frequencia,2)) %>%
+  select(Ano, Percentual) %>%
+  kableExtra::kable() 
+
+  
+DemandaFreq
+```
+
+Comparando 1998 a 2021, observa-se uma grande demanda na série, consultando o calendário agrícola, observa-se que entre e Abril a Novembro do ano seja o período de plantio da maioria das lavouras, e de dezembro a abril o período de colheta da maioria das lavouras.
+
+
+```{r TendenciaLine, echo=FALSE}
+# Boxplot Demanda por fertilizante
+# Sazonalidade por fertilizante
+ggseasonplot(ts.demanda, year.labels = TRUE, year.label.left = TRUE) +
+  ylab("Demanda (ton)") + xlab("Mês") +
+  ggtitle("Demanda por Fertilizantes \n (Jan-1998 a Out-2021)") +
+  theme_classic() +
+  theme(plot.title = element_text(size = 14, hjust = 0.5, face = "bold"),
+        axis.title = element_text(size = 9, face = "italic"))
+```
+
+
+Observa-se no `boxplot` que há uma tendência de sazonalidade a partir de maio normalizando em dezembro por ano com seus valores médios.
+
+
+```{r tendencia, echo=FALSE, fig.width  = 7, fig.height = 4}
+# Boxplot Demanda por fertilizante
+boxplot(ts.demanda~cycle(ts.demanda),
+        col = rep(c("gold","darkgreen","blue", "red"), each=3),
+        xlab="Meses", ylab= "Demanda (ton)", 
+        ylim = c(0,6000),
+        main ="Demanda por Fertilizantes \n (Jan-1998 a Out-2021)",
+        par(bg="white"))
+```
+
+```{r}
+# Base para Plotar o Histograma no ggplot2
+# calculando a média ddos dados
+media <- mean(demanda$fertilizantes, na.rm = TRUE)
+# calculando o desvio padrão
+devpad <- sd(demanda$fertilizantes, na.rm = TRUE) 
+# Teste de shapiro-wilk
+shapiro <- shapiro.test(demanda$fertilizantes)
+# p-valor do teste de shapiro
+p_valor.shapiro <- round(shapiro$p.value, 2)
+# Estatistica do teste
+estatis.shapiro <- round(shapiro$statistic, 2)
+
+options(scipen = 999)
+#-------------------------------------------
+# definindo o conjunto de dados e a variável
+ggplot(demanda, aes(x=demanda$fertilizantes)) + 
+  # E plotando o histograma com densidade
+  geom_histogram(aes(y = ..density..),
+                 # Definindo a cor de preenchimento
+                 bins = 30, fill = "cyan4",
+                 # Definindo a cor do contorno
+                 col = alpha("red",.3)) +
+  # gerando a linha da distribuição
+  geom_function(fun = dnorm, args = list(mean = media, sd = devpad),
+                col = "tomato", lwd = 1.5, lty = 4) +
+  # labels do gráfico
+  labs(title = "Distribuição da demanda por Fertilizante",
+       x = "Demanda de Fertilizante",
+       y = "Densidade ",
+       caption = "Fonte: ANDA período de jan-1998 até out-2021.") +
+  # Inclusão do teste Shapiro-Wilk e o seu p-valor
+  annotate("text", x = 4000, y = 0.0004, size = 4.1,
+           label = paste0("Shapiro-Wilk = ", estatis.shapiro)) +
+  annotate("text", x = 4000, y = 0.00035, size = 4.1,
+           label = paste0("p-value = ", p_valor.shapiro)) + 
+  # Definindo o tema do gráfico
+  theme_classic() +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+```
+
+\newpage
+# Modelo de Holt-Winter Aditivo e Multiplicativo
+
+## Decomposição das Series Temporais
+
+De acordo com a decomposição clássica de séries temporais, uma ST pode ser decomposta em quatro componentes não observáveis: tendência, ciclo, sazonalidade e erro.
+
+Geralmente as componentes de tendência e ciclo permanecem agregadas devido ao número de observações da ST não ser suficiente para uma boa estimativa da componente de ciclo separadamente.
+
+Aqui iremos decompor as séries em `aditiva` e `multiplicativa`.
+
+```{r}
+# Janela em 2009
+DemandaCorte <- ts.demanda %>% 
+  stats::window(frequency = 12,      # Frequência da `ts`
+                start = c(2007,01),  # Início da Time serie
+                end = c(2021,10)     # Fim da Time Serie 
+                )
+
+# DECOMPOSIÇÃO SERIE TEMPORAL ADITIVA
+DecomposeAdditive <- DemandaCorte %>% 
+  stats::decompose(type = "additive") 
+
+# DECOMPOSIÇÃO SERIE TEMPORAL MULTIPLICATIVA
+DecomposeMulti <- DemandaCorte %>% 
+  stats::decompose(type = "multiplicative")
+
+# Plotando os gráficos da decomposição
+PlotDecompAdd  <- autoplot(DecomposeAdditive, col = "cyan4") + theme_classic()
+PlotDecompMult <- autoplot(DecomposeMulti, col = "darkcyan") + theme_classic()
+
+# Vizualizar os dados um ao lado do outro
+grid.arrange(PlotDecompAdd, PlotDecompMult, nrow = 1, ncol = 2)
+```
+
+Tanto na decomposição ativiva quanto na multiplicativa a tendencia da série é Crescente. Pelo comportamento das series, ela possui uma caracteristica mais multiplicativa.
+
+## Modelo de Holt-Winters
+
+Este modelo é uma extensão feita por Winters em 1960 ao modelo de Holt com o intuito de capturar o efeito sazonal.  
+
+O modelo segue a mesma proposta de equação vista na Suavização Exponencial de Holt com a inclusão de uma equação adicional para a sazonalidade. O modelo HW é adequado para séries de comportamento mais geral, uma vez que na prática a maioria das séries encontradas apresentam a componente de sazonalidade.
+
+### Modelo Aditivo
+
+Para a previsão do modelo aditivo consideramos uma rojeção de 48 meses com 60% de confiança. Os resultados mostraram que a projeção conseguiu capturar as sazonalidades do modelo.
+
+```{r}
+# MODELO HW ADITIVO: AJUSTE SAZONAL
+HoltWinterDemandaAddit <- hw(DemandaCorte, 
+                             seasonal = "additive", 
+                             h = 48, level = 60)
+
+# Gerando o gráfico
+autoplot(DemandaCorte, series = "Original") +
+  autolayer(HoltWinterDemandaAddit$fitted, 
+            series = "HW Aditivo",  showgap = FALSE) +
+  autolayer(HoltWinterDemandaAddit, 
+            serie = "Previsão HW Aditivo h = 48",  showgap = FALSE) + 
+  ggtitle("Demanda por Fertilizante - Holt-Winters Aditivo (2021-2025)") + 
+  ylab("Demanda (ton)") + xlab("Período") + 
+  theme_classic() +
+  theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 9, face = "italic"),
+        legend.position = "top", legend.title=element_blank() )
+```
+
+### Modelo Multiplicativo
+
+Para a previsão do modelo multiplicativo também consideramos uma rojeção de 48 meses com 60% de confiança. Os resultados mostraram que a projeção conseguiu capturar as sazonalidades do modelo semelhante ao exemplo aditivo.
+
+```{r}
+#-----------------------------------------
+# MODELO HW MULTIPLICATIVO: AJUSTE SAZONAL
+HoltWinterDemandaMult <- hw(DemandaCorte, 
+                            seasonal = "multiplicative", 
+                            h = 48, level = 60)
+
+
+autoplot(DemandaCorte, series = "Original") +
+  autolayer(HoltWinterDemandaMult$fitted, 
+            series = "HW Multiplicativo", 
+            showgap = FALSE) +
+  autolayer(HoltWinterDemandaMult, 
+            serie = "Previsão HW Multiplicativo h = 48",
+            showgap = FALSE) + 
+  ggtitle("Demanda por Fertilizante - Holt-Winters Multiplicativo (2021-2025)") + 
+  ylab("Demanda (ton)") + xlab("Período") + 
+  theme_classic() +
+  theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 9, face = "italic"),
+        legend.position = "top", legend.title=element_blank() )
+
+```
+
+## Qual o modelo melhor se adequa a amostra?
+
+```{r}
+# Acuracia dos Modelos, quanto menor o erro melhor
+# PARAMETROS DE ERRO: HW-ADITIVO
+AccuracyAddRMSE <- round(accuracy(HoltWinterDemandaAddit)[,2],2)
+AccuracyAddMAPE <- round(accuracy(HoltWinterDemandaAddit)[,5],2)
+
+# PARAMETROS DE ERRO: HW-MULTIPLICATIVO
+AccuracyMultRMSE <- round(accuracy(HoltWinterDemandaMult)[,2],2)
+AccuracyMultMAPE <- round(accuracy(HoltWinterDemandaMult)[,5],2)
+
+
+# Gerando os dois modelos em um unico gráfico
+autoplot(DemandaCorte, series = "Original") +
+  autolayer(HoltWinterDemandaAddit, 
+            series = "Previsão HW Aditivo h = 48",  
+            showgap = FALSE) +
+  autolayer(HoltWinterDemandaMult, 
+            serie = "Previsão HW Multiplicativo h = 48",
+            showgap = FALSE) + 
+  # Titulo dos eixos
+  ggtitle("Demanda por Fertilizante 2021 a 2025 (Holt-Winters)") + 
+  ylab("Demanda (ton)") + xlab("Período") + 
+  # Tema do Gráfico
+  theme_classic() +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 9, face = "italic"),
+        legend.position = "top", legend.title=element_blank() ) + 
+  annotate("text", x = 2012, y = 7000, size = 4.1, col = "darkgreen",
+           label = paste0("RMSE Additivo = ", AccuracyAddRMSE) ) +
+  annotate("text", x = 2012, y = 6800, size = 4.1, col = "blue",
+           label = paste0("RMSE Multiplicativo = ", AccuracyMultRMSE) ) +
+  annotate("text", x = 2012, y = 6400, size = 4.1,col = "darkgreen",
+           label = paste0("MAPE Additivo = ", AccuracyAddMAPE) ) +
+  annotate("text", x = 2012, y = 6200, size = 4.1, col = "blue",
+           label = paste0("MAPE Multiplicativo = ", AccuracyMultMAPE) )
+```
+
+Ao compararmos os erros do Modelo Aditivo e Multiplicativo, considerando o MAPE^[Erro Médio Absoluto Percentual] e o RMSE^[Raiz do Erro Médio Quadrado], consideramos o melhor modelo o Multiplicativo, pois evidencia os menores erros.
+
+## Treinando o modelo
+
+Nesta etapa consideramos separar a base de dados em treino `(end = c(2017,12))` e teste `(start = c(2018,1))` utilizando o modelo multiplicativo. 
+
+O resultado foi bem satisfatórios.
+
+```{r}
+# Modelo Aditivo
+DemandaTreino <- window(DemandaCorte, end = c(2018,12))
+DemandaTeste <- window(DemandaCorte, start = c(2019,1))
+
+# Treinando o modelo Aditivo
+DemandaTreinoWHM_Addit <- hw(DemandaTreino, 
+                             seasonal = "additive", 
+                             h = 34, 
+                             level = 0)
+
+# Treinando o modelo Multiplicativo
+DemandaTreinoWHM_Multi <- hw(DemandaTreino, 
+                             seasonal = "multiplicative", 
+                             h = 34, 
+                             level = 0)
+
+
+# A acurácia do modelo.
+round(accuracy(DemandaTreinoWHM_Addit),2) %>% kableExtra::kable()
+round(accuracy(DemandaTreinoWHM_Multi),2) %>% kableExtra::kable()
+
+
+autoplot(DemandaTreino)+
+  autolayer(DemandaTreinoWHM_Addit, 
+            series = "Previsão HW Aditivo", 
+            lwd = 0.5,  showgap = FALSE)+
+  autolayer(DemandaTreinoWHM_Multi, 
+            series = "Previsão HW Multiplicativa", 
+            lwd = 0.5,  showgap = FALSE) +
+  autolayer(DemandaTeste, 
+            serie = "Realizado", lwd = 0.5) + 
+  ggtitle("Previsão de Demanda de Fertilizante Holt-Winters")+
+  ylab("Treino da Demanda") + xlab("Período") + 
+  theme_classic() +
+  theme(legend.position = "top", legend.title = element_blank(),
+        axis.title = element_text(size = 9, face = "italic"),
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+  
+```
+
+
+
+# Projeção com o modelos SARIMA(p,d,q)(P,D,Q)[s]
+
+Plotar os correlogramas ACF e PACF e verificar a estacionariedade da série temporal.  O pacote TStudio tem a função ts_cor() que é bem interessante. Vale a pena dar um visitada no sítio deste pacote indiano. 
+
+```{r}
+ACFDemanda <- ggAcf(DemandaCorte, lag.max = 120)
+PACFDemanda <- ggPacf(DemandaCorte, lag.max = 120)
+gridExtra::grid.arrange(ACFDemanda, PACFDemanda, nrow = 1)
+```
+
+```{r}
+ModeloDemanda <- auto.arima(DemandaTreino,
+                            seasonal = T,
+                            # Se TRUE, fará a seleção passo a passo (mais rápido).
+                            stepwise = F,
+                            # Aprox pela doma dos quadrados
+                            approximation = F);ModeloDemanda
+```
+
+
+```{r}
+#---------------------------------
+# TESTE ADF
+# Ho. A série não é estacionária
+# H1: A serie é estacionaria
+
+adf.test(DemandaTreino)
+# Rejeita H0:: p-value = 0.01
+```
+
+```{r}
+#---------------------------------
+# Pelo KPSS
+# Ho. A série é estacionaria
+# H1: A série não é estacionaria
+kpss.test(DemandaTreino)
+# Rejeita H0:: p-value = 0.01
+```
+
+```{r}
+#---------------------------------
+# PHILLP-PERRON
+# Ho. A série não é estacionaria
+# H1: A serie é estacionaria
+
+pp.test(DemandaTreino)
+# Rejeita H0:: p-value = 0.01
+```
+
+```{r}
+PrevisaoAutoArima <- forecast(DemandaTreino, h = 48, level = 0)
+PrevisaoAutoArima
+```
+
+```{r}
+autoplot(DemandaTreino)+
+  autolayer(DemandaTeste, 
+            serie = "Realizado", lwd = 0.5) + 
+    autolayer(PrevisaoAutoArima$fitted, 
+            series = "Previsão Modelo Auto-Arima", 
+            lwd = 0.5,  showgap = FALSE) +
+  ggtitle("Previsão de Demanda de Fertilizante (Auto-Arima)")+
+  ylab("Treino da Demanda") + xlab("Período") + 
+  theme_classic() +
+  theme(legend.position = "top", legend.title = element_blank(),
+        axis.title = element_text(size = 9, face = "italic"),
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+```
+
+# Conclusão
+
+Por final iremos calcular o AICc dos modelos Multiplicativo e Auto Arima para que possamos estimar a demanda futura por Fertilizante, ao qual será muito útil para elaboração dos orcamentos das empresas e do governo.
+
+```{r}
+AICAutoArima <- round(AIC(ModeloDemanda),2)
+AICHoltWintwrMulti <- round(AIC(DemandaTreinoWHM_Multi$model),2)
+
+
+# Gerando a comparação dos Models
+# Modelo Original
+autoplot(DemandaTreino)+
+  autolayer(PrevisaoAutoArima$fitted, 
+            series = "Previsão Modelo Auto-Arima", 
+            lwd = 0.5,  showgap = FALSE)+
+    autolayer(DemandaTreinoWHM_Multi, 
+            series = "Previsão HW Multiplicativa", 
+            lwd = 0.5,  showgap = FALSE)+
+  autolayer(DemandaTeste, 
+            serie = "Realizado", lwd = 0.5) + 
+  ggtitle("Previsão de Demanda de Fertilizante (Auto-Arima)")+
+  ylab("Treino da Demanda") + xlab("Período") + 
+  theme_classic() +
+  theme(legend.position = "top", legend.title = element_blank(),
+        axis.title = element_text(size = 9, face = "italic"),
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) +
+  # Resultado de Akaike
+  annotate("text", x = 2010, y = 5000, size = 4.1,
+           label = paste0("AIC Auto Arima = ", AICAutoArima) ) +
+  annotate("text", x = 2010, y = 4800, size = 4.1,
+           label = paste0("AIC HW Multiplicativo = ", AICHoltWintwrMulti) ) +
+    # Tema do gráfico
+  theme_classic() +
+  # Plotagem das labels
+  ggtitle("Previsão da Demanda por Fertilizante") +
+  xlab("Período") + ylab("Demanda (ton)") +
+  # Formato das labels (titulo, eixos e legenda) no gráfico
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 9, face = "italic"),
+        # Posicionaodo a legenda e removendo o titulo da legenda
+        legend.position = "top", legend.title=element_blank() )
+  
+```
+
+
+# Projeção da demanda futura por fertilizante com o Modelo Auto Arima
+
+```{r}
+ModeloDemanda <- auto.arima(DemandaCorte,
+                            seasonal = T,
+                            # Se TRUE, fará a seleção passo a passo (mais rápido).
+                            stepwise = F,
+                            # Aprox pela doma dos quadrados
+                            approximation = F);ModeloDemanda
+
+PrevisaoAutoArima <- forecast(ModeloDemanda, h = 14)
+
+autoplot(DemandaCorte) + 
+  autolayer(PrevisaoAutoArima, lwd = 1, showgap = FALSE) +
+  ggtitle("Previsão de Demanda de Fertilizante  (Auto-Arima) \n (Out-2021 a Out-2025)")+
+  ylab("Demanda (ton)") + xlab("Período") + 
+  theme_classic() +
+  theme(legend.position = "top", legend.title = element_blank(),
+        axis.title = element_text(size = 9, face = "italic"),
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5))
+
+```
+
+```{r}
+kable(PrevisaoAutoArima)
+```
+
+
